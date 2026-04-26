@@ -275,7 +275,7 @@ function renderCM(cm, labels) {
 
   const axisTitle  = 22;                          // width for rotated "Actual" text
   const totalLeft  = axisTitle + Math.ceil(maxLabelW) + 20; // full label + gap
-  const footerPx   = xLabelDiag + 28;            // enough for rotated labels + "Predicted"
+  const footerPx   = xLabelDiag + 44;            // enough for rotated labels + "Predicted"
   const topPx      = 10;
   const rightPx    = 24;
   const cellSize   = 42;
@@ -358,14 +358,14 @@ function renderCM(cm, labels) {
   ctx.fillText('Actual', 0, 0);
   ctx.restore();
 
-  // ── x-axis labels — anchored at top of footer, rotated -45° leftward ──
+  // ── x-axis labels — anchored below grid, rotated -45° leftward ──
   ctx.fillStyle    = LABEL_COLOR;
   ctx.font         = `${labelFs}px Courier New`;
-  ctx.textAlign    = 'left';
+  ctx.textAlign    = 'right';
   ctx.textBaseline = 'middle';
   for (let j = 0; j < n; j++) {
     const cx = totalLeft + j * cellSize + cellSize / 2;
-    const cy = topPx + gridH + 6;
+    const cy = topPx + gridH + 22;   // 22px clear gap below grid
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-Math.PI / 4);
