@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>University Classifier — ML Dashboard</title>
+<style>
+  :root {
+    --bg:    #0d0f14;
+    --panel: #13161e;
+    --border:#1e2330;
+    --accent:#ff6eb4;
+    --blue:  #0056ff;
+    --red:   #ef4444;
+    --muted: #4b5563;
+    --text:  #e2e8f0;
+    --dim:   #94a3b8;
+    --good:  #00d4aa;
+    --warn:  #ff6eb4;
+    --bad:   #ef4444;
+    --mono:  'Courier New', monospace;
+    --sans:  'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* top bar */
+  .topbar {
+    display: flex; align-items: center;
+    padding: 14px 24px; gap: 10px; flex-shrink: 0;
+  }
+  .topbar-icon  { color: var(--accent); font-size: 22px; font-family: var(--mono); }
+  .topbar-title { font-size: 18px; font-weight: 700; }
+  .topbar-sub   { color: var(--dim); font-size: 11px; margin-left: 4px; }
+  .topbar-status { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .topbar-status.busy { color: var(--accent); }
+  .divider { height: 1px; background: var(--border); flex-shrink: 0; }
+
+  /* buttons */
+  .btnrow { display: flex; align-items: center; padding: 14px 24px; gap: 12px; flex-shrink: 0; }
+  .btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 10px 18px; background: var(--panel); color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 4px;
+    cursor: pointer; transition: background .15s, color .15s; letter-spacing: .04em;
+  }
+  .btn:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+
+  /* body grid */
+  .body {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 0 12px;
+    padding: 0 24px 24px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* panels */
+  .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .panel-title {
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    color: var(--blue); padding: 9px 12px; letter-spacing: .08em; flex-shrink: 0;
+  }
+  .panel-divider { height: 1px; background: var(--border); flex-shrink: 0; }
+
+  /* right column */
+  .right-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
+
+  /* score cards */
+  .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; flex-shrink: 0; }
+  .score-card { background: var(--panel); padding: 8px 10px; }
+  .score-label { font-family: var(--mono); font-size: 8px; font-weight: 700; color: var(--dim); letter-spacing: .06em; margin-bottom: 2px; }
+  .score-val   { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--dim); }
+  .score-val.ensemble { color: var(--accent); }
+
+  /* report */
+  .report-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .report-body {
+    flex: 1; overflow-y: auto; padding: 8px 10px;
+    font-family: var(--mono); font-size: 9px; line-height: 1.65;
+    white-space: pre; min-height: 0;
+  }
+  .report-body .r-head { color: var(--blue); font-weight: 700; }
+  .report-body .r-good { color: var(--good); }
+  .report-body .r-warn { color: var(--warn); }
+  .report-body .r-bad  { color: var(--bad);  }
+
+  /* confusion matrix */
+  .cm-panel { display: flex; flex-direction: column; min-height: 0; }
+  .cm-body  {
+    flex: 1; overflow: auto; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 12px;
+  }
+  .cm-placeholder { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  /* loading overlay */
+  .overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(13,15,20,.93); z-index: 100;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  }
+  .overlay.show { display: flex; }
+  .overlay-title { font-size: 30px; font-weight: 700; color: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+  .overlay-sub   { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* scrollbars */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="topbar-icon">▣</span>
+  <span class="topbar-title">University Classifier</span>
+  <span class="topbar-sub">PA Higher-Ed Ensemble Model</span>
+  <span class="topbar-status" id="statusLbl">● idle</span>
+</div>
+<div class="divider"></div>
+
+<div class="btnrow">
+  <button class="btn" id="btnTrain" onclick="runTrain()">⚙  TRAIN</button>
+  <button class="btn" id="btnTest"  onclick="runTest()" disabled>▶  TEST</button>
+</div>
+
+<div class="body">
+
+  <!-- LEFT: confusion matrix -->
+  <div class="panel cm-panel">
+    <div class="panel-title">CONFUSION MATRIX</div>
+    <div class="panel-divider"></div>
+    <div class="cm-body" id="cmBody">
+      <span class="cm-placeholder">Run TEST to display confusion matrix</span>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-col">
+    <div class="score-grid">
+      <div class="score-card"><div class="score-label">ENSEMBLE</div><div class="score-val ensemble" id="sc-ensemble">--</div></div>
+      <div class="score-card"><div class="score-label">KNN</div><div class="score-val" id="sc-knn">--</div></div>
+      <div class="score-card"><div class="score-label">DTC</div><div class="score-val" id="sc-dt">--</div></div>
+      <div class="score-card"><div class="score-label">RFC</div><div class="score-val" id="sc-rf">--</div></div>
+      <div class="score-card"><div class="score-label">GBC</div><div class="score-val" id="sc-gb">--</div></div>
+      <div class="score-card"><div class="score-label">ADA</div><div class="score-val" id="sc-ada">--</div></div>
+      <div class="score-card"><div class="score-label">LRC</div><div class="score-val" id="sc-lr">--</div></div>
+    </div>
+
+    <div class="panel report-panel">
+      <div class="panel-title">CLASSIFICATION REPORT</div>
+      <div class="panel-divider"></div>
+      <div class="report-body" id="reportBody">
+        <span style="color:var(--muted)">Run TEST to see the classification report.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="overlay-title">Loading…</div>
+  <div class="overlay-sub" id="overlaySub"></div>
+</div>
+
+<script>
+let trained = false;
+
+function setStatus(text, busy=false) {
+  const el = document.getElementById('statusLbl');
+  el.textContent = (busy ? '◉ ' : '● ') + text;
+  el.className = 'topbar-status' + (busy ? ' busy' : '');
+}
+function showLoading(sub='') {
+  document.getElementById('overlaySub').textContent = sub;
+  document.getElementById('overlay').classList.add('show');
+}
+function hideLoading() { document.getElementById('overlay').classList.remove('show'); }
+function setBusy(busy) {
+  document.getElementById('btnTrain').disabled = busy;
+  document.getElementById('btnTest').disabled  = busy || !trained;
+}
+
+function listenStream(jobId, onDone, onError) {
+  const es = new EventSource(`/stream/${jobId}`);
+  es.onmessage = (e) => {
+    const line = JSON.parse(e.data);
+    if (line.startsWith('__DONE__:'))       { es.close(); onDone(JSON.parse(line.slice(9))); }
+    else if (line.startsWith('__ERROR__:')) { es.close(); onError(line.slice(10)); }
+    else if (line === '__TIMEOUT__')        { es.close(); onError('Stream timed out'); }
+  };
+  es.onerror = () => { es.close(); onError('Connection lost'); };
+}
+
+async function runTrain() {
+  showLoading('Training models — this may take a minute…');
+  setStatus('training', true); setBusy(true);
+  const res = await fetch('/train', { method: 'POST' });
+  const { job_id } = await res.json();
+  listenStream(job_id, (p) => {
+    const s = p.scores;
+    document.getElementById('sc-ensemble').textContent = fmt(s.ensemble);
+    document.getElementById('sc-knn').textContent = fmt(s.knn);
+    document.getElementById('sc-dt').textContent  = fmt(s.dt);
+    document.getElementById('sc-rf').textContent  = fmt(s.rf);
+    document.getElementById('sc-gb').textContent  = fmt(s.gb);
+    document.getElementById('sc-ada').textContent = fmt(s.ada);
+    document.getElementById('sc-lr').textContent  = fmt(s.lr);
+    trained = true; hideLoading(); setStatus('ready'); setBusy(false);
+  }, (err) => { console.error(err); hideLoading(); setStatus('error'); setBusy(false); });
+}
+
+async function runTest() {
+  showLoading('Evaluating on held-out test set…');
+  setStatus('testing', true); setBusy(true);
+  const res = await fetch('/test', { method: 'POST' });
+  const { job_id } = await res.json();
+  listenStream(job_id, (p) => {
+    renderReport(p.report_text);
+    renderCM(p.cm, p.labels);
+    hideLoading(); setStatus('ready'); setBusy(false);
+  }, (err) => { console.error(err); hideLoading(); setStatus('error'); setBusy(false); });
+}
+
+function fmt(v) { return v != null ? v.toFixed(3) : '--'; }
+
+function renderReport(text) {
+  const el = document.getElementById('reportBody');
+  el.innerHTML = '';
+  text.split('\n').forEach(line => {
+    const span = document.createElement('span');
+    if (/precision|recall|f1/.test(line.toLowerCase())) {
+      span.className = 'r-head';
+    } else if (/\d+\.\d+/.test(line)) {
+      const nums = [...line.matchAll(/\d+\.\d+/g)].map(m => parseFloat(m[0]));
+      const avg  = nums.slice(0,3).reduce((a,b)=>a+b,0) / Math.max(nums.slice(0,3).length,1);
+      span.className = avg >= 0.7 ? 'r-good' : avg >= 0.5 ? 'r-warn' : 'r-bad';
+    }
+    span.textContent = line + '\n';
+    el.appendChild(span);
+  });
+}
+
+// ── Pure Canvas 2D confusion matrix ──────────────────────────────────────
+function renderCM(cm, labels) {
+  const body = document.getElementById('cmBody');
+  body.innerHTML = '';
+
+  const n      = labels.length;
+  const maxVal = Math.max(...cm.flat(), 1);
+
+  // Accurately measure label widths at the font we'll actually use
+  const tmpCanvas = document.createElement('canvas');
+  const tmpCtx    = tmpCanvas.getContext('2d');
+  const labelFs   = 11;
+  tmpCtx.font     = `${labelFs}px Courier New`;
+  const maxLabelW = Math.max(...labels.map(l => tmpCtx.measureText(l).width));
+
+  // x-axis labels are rotated 45° — their pixel footprint diagonally is label_width / √2
+  const xLabelDiag = Math.ceil(maxLabelW / Math.SQRT2) + 16;
+
+  const axisTitle  = 22;                          // width for rotated "Actual" text
+  const totalLeft  = axisTitle + Math.ceil(maxLabelW) + 20; // full label + gap
+  const footerPx   = xLabelDiag + 28;            // enough for rotated labels + "Predicted"
+  const topPx      = 10;
+  const rightPx    = 24;
+  const cellSize   = 42;
+
+  const gridW = cellSize * n;
+  const gridH = cellSize * n;
+  const W     = totalLeft + gridW + rightPx;
+  const H     = topPx + gridH + footerPx;
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = W;
+  canvas.height = H;
+  body.appendChild(canvas);
+
+  const ctx      = canvas.getContext('2d');
+  const fontSize = Math.max(9, Math.min(13, cellSize * 0.3));
+  const LABEL_COLOR = '#b0bcd4';   // lighter than before — easy to read
+  const AXIS_COLOR  = '#8899bb';
+
+  // background
+  ctx.fillStyle = '#13161e';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── draw cells ────────────────────────────────────────────────────────
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const val       = cm[i][j];
+      const intensity = val / maxVal;
+
+      // blue gradient: dark navy → deep blue → bright sky
+      let r, g, b;
+      if (intensity < 0.5) {
+        const t = intensity * 2;
+        r = Math.round(8  + t * (10  - 8));
+        g = Math.round(13 + t * (42  - 13));
+        b = Math.round(26 + t * (110 - 26));
+      } else {
+        const t = (intensity - 0.5) * 2;
+        r = Math.round(10  + t * (77  - 10));
+        g = Math.round(42  + t * (159 - 42));
+        b = Math.round(110 + t * (255 - 110));
+      }
+
+      const x = totalLeft + j * cellSize;
+      const y = topPx     + i * cellSize;
+
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(x, y, cellSize, cellSize);
+
+      ctx.strokeStyle = '#1e2330';
+      ctx.lineWidth   = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+
+      ctx.fillStyle    = intensity > 0.45 ? '#0d0f14' : '#e2e8f0';
+      ctx.font         = `bold ${fontSize}px Courier New`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(val), x + cellSize / 2, y + cellSize / 2);
+    }
+  }
+
+  // ── y-axis labels — full text, right-aligned flush to grid ───────────
+  ctx.fillStyle    = LABEL_COLOR;
+  ctx.font         = `${labelFs}px Courier New`;
+  ctx.textAlign    = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < n; i++) {
+    const y = topPx + i * cellSize + cellSize / 2;
+    ctx.fillText(labels[i], totalLeft - 10, y);
+  }
+
+  // y-axis title "Actual" (rotated)
+  ctx.save();
+  ctx.fillStyle    = AXIS_COLOR;
+  ctx.font         = 'bold 10px Helvetica, Arial, sans-serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.translate(axisTitle / 2, topPx + gridH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Actual', 0, 0);
+  ctx.restore();
+
+  // ── x-axis labels — anchored at top of footer, rotated -45° leftward ──
+  ctx.fillStyle    = LABEL_COLOR;
+  ctx.font         = `${labelFs}px Courier New`;
+  ctx.textAlign    = 'left';
+  ctx.textBaseline = 'middle';
+  for (let j = 0; j < n; j++) {
+    const cx = totalLeft + j * cellSize + cellSize / 2;
+    const cy = topPx + gridH + 6;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillText(labels[j], 0, 0);
+    ctx.restore();
+  }
+
+  // x-axis title "Predicted"
+  ctx.fillStyle    = AXIS_COLOR;
+  ctx.font         = 'bold 10px Helvetica, Arial, sans-serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Predicted', totalLeft + gridW / 2, topPx + gridH + footerPx - 10);
+
+  // ── tooltip on hover ──────────────────────────────────────────────────
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx   = e.clientX - rect.left;
+    const my   = e.clientY - rect.top;
+    const col  = Math.floor((mx - totalLeft) / cellSize);
+    const row  = Math.floor((my - topPx)     / cellSize);
+    if (col >= 0 && col < n && row >= 0 && row < n) {
+      canvas.title = `Actual: ${labels[row]}\nPredicted: ${labels[col]}\nCount: ${cm[row][col]}`;
+    } else {
+      canvas.title = '';
+    }
+  });
+}
+</script>
+</body>
+</html>
